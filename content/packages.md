@@ -120,6 +120,33 @@ api.imply([
 
 `api.use` and `api.imply` can also take an extra argument to specify the architecture on which these dependencies should be used - this way, you can register a dependency on only the server version of HTTP, for example. This can be helpful when you are trying to reduce the side of your client-side app bundle.
 
+### You can't depend on a specific Meteor version
+
+Note that the Meteor release version number is mostly a marketing artifact, so it doesn't follow SemVer. This means packages can only depend on specific versions of the packages inside a Meteor release, but can't depend on a specific release itself. We have a helpful shorthand api called `versionsFrom` that handles this for you by automatically filling in package version numbers from a particular release:
+
+```js
+// Use versions of core packages from Meteor 1.2.1
+api.versionsFrom('1.2.1');
+
+api.use([
+  'ecmascript', // Don't need to specify version because of versionsFrom above
+  'check',
+  'aldeed:simple-schema@1.3.3',
+  'mdg:validation-error@0.1.0'
+]);
+```
+
+The above code snippet is equivalent to the code below, which specifies all of the version numbers individually:
+
+```js
+api.use([
+  'ecmascript@0.1.6',
+  'check@1.1.0',
+  'aldeed:simple-schema@1.3.3',
+  'mdg:validation-error@0.1.0'
+]);
+```
+
 ## Architectures
 
 Meteor packages are built around the idea of multiple architectures where code might run. Here are all currently possible architectures:
@@ -153,6 +180,10 @@ The mental model here is:
 The constraint solver is necessary because Meteor's package system is **single-loading** - that is, you can never have two different versions of the same package loaded side-by-side in the same app. This is particularly useful for packages that include a lot of client-side code, or packages that expect to be singletons.
 
 Note that the version solver also has a concept of "gravity" - when many solutions are possible for a certain set of dependencies, it always selects the oldest possible version. This is helpful if you are trying to develop a package to ship to lots of users, since it ensures your package will be compatible with the lowest common denominator of a dependency. If your package needs a newer version than is currently being selected for a certain dependency, you need to update your `package.js` to have a newer version constraint.
+
+## LESS, SCSS, or Stylus mixins/variables
+
+Just like packages can export JavaScript code, they can export reusable bits of CSS pre-processor code. You can have a package that doesn't actually include any CSS, but just exports different bits of reusable mixins and variables. Learn more about this in the [article about the Meteor build system](XXX), which includes a section about CSS compilers.
 
 ## Cordova plugins
 
@@ -285,3 +316,58 @@ If you've ever looked inside Meteor's package cache at `~/.meteor/packages`, you
 ## Package testing
 
 Meteor packages are a great unit for code testing - you can test your packages individually or together with others. Read more in the [testing article](XXX).
+
+## Tips for package structure
+
+Let's go over some tips for structuring your packages nicely. Also, Meteor has a few changes coming on the horizon to align with ES2015 modules, the new standard for importing/exporting JavaScript code. With a bit of up-front structure, you can set yourself up for success to easily transition to the new format.
+
+### One export per file
+
+In Meteor's current system, it's not always clear where symbols in your app are coming from. In ES2015 modules, it will become clear since you import symbols from a particular, file, but in the meantime you can simulate a similar effect by exporting only one symbol from each file, and naming it the same as the file:
+
+```js
+// In `Widget.js`
+Widget = class Widget { ... }
+
+// In a different file
+const w = new Widget();
+```
+
+In the future, this code will simply start looking like this:
+
+```js
+// ES2015 module version, file still called Widget.js
+export class Widget { ... }
+
+// In a different file:
+import Widget from './Widget.js';
+const w = new Widget();
+```
+
+If you need to export multiple symbols from one file, create a container object and add those symbols onto the object. This way, the container object can be named the same as the file to follow the above convention, and it can have as many properties as you want.
+
+### One export per package
+
+For the same reasons as above, it is advantageous to export exactly one symbol from every package, named the same as the package. For example, the `kadira:flow-router` package exports `FlowRouter`.
+
+## Build plugins
+
+The most powerful feature of Meteor's build system is the ability to define custom plugins. If you find yourself writing scripts that mangle one type of file into another, merge multiple files, or something else, it's likely that these scripts would be better implemented as a build plugin. The `ecmascript`, `templating`, and `coffeescript` packages are all implemented as build plugins, so you can replace them with your own versions if you want to!
+
+[Read the documentation about build plugins.](https://github.com/meteor/meteor/wiki/Build-Plugins-API)
+
+### Types of build plugins
+
+There are three types of build plugins supported by Meteor today:
+
+1. Compiler plugin - compiles source files (LESS, CoffeeScript) into built output (JS, CSS, asset files, and HTML). Only one compiler plugin can handle a single file extension.
+2. Minifier plugin - compiles lots of built CSS or JS files into one or more minified files, for example `standard-minifiers`. Only one minifier can handle each of `js` and `css`.
+3. Linter plugin - processes any number of files, and can print lint errors. Multiple linters can process the same files.
+
+### Writing your own build plugin
+
+Writing a build plugin is a very advanced task that only the most advanced Meteor users should get into. The best place to start is to copy a different plugin that is the most similar to what you are trying to do. For example, if you wanted to make a new CSS compiler plugin, you could fork the `less` package; if you wanted to make your own JS transpiler, you could fork `ecmascript`. A good example of a linter is the `jshint` package, and for a minifier you can look at `standard-minifiers-js` and `standard-minifiers-css`.
+
+### Caching
+
+The best way to make your build plugin fast is to use caching anywhere you can - the best way to save time is to do less work! Check out the [documentation about CachingCompiler](https://github.com/meteor/meteor/wiki/Build-Plugins-API#caching) to learn more. It's used in all of the above examples, so you can see how to use it by looking at them.
